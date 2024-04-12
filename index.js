@@ -1,79 +1,147 @@
-const express = require('express')
-app = express()
-const cors = require("cors")
-const { MongoClient } = require("mongodb");
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require("cors");
+const app = express();
 const dotenv = require("dotenv")
 dotenv.config()
-
-const port = process.env.PORT || 3000
-
-app.use(express.static('static'))
-
-const uri = 'mongodb+srv://lukecmendiola:ub5SuSPyuVYQYkWX@merna-ma.jo7ugk2.mongodb.net/?retryWrites=true&w=majority&appName=merna-ma'
-const client = new MongoClient(uri)
-
-async function setupMongoDB() {
-	try {
-	  const database = client.db('leaderboard');
-	  playerWinsCollection = database.collection('playerWins');
-	  const query = { wins: 1 };
-	  const wins = await playerWinsCollection.findOne(query);
-	  console.log("MongoDB setup complete");
-	  console.log(wins)
-	} catch (err) {
-	  console.error("Error setting up MongoDB:", err);
-	}
-}
+app.use(cors())
+const port = process.env.PORT || 3001
 
 
+const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@merna-ma.jo7ugk2.mongodb.net/syllabus?retryWrites=true&w=majority`;
+mongoose.connect(uri);
 
-
-app.get('/Instructor', (req, res) => {
-
-})
-
-app.get('/Class', (req, res) => {
-	
-})
-
-app.get('/ClassSection', (req, res) => {
-	
-})
-app.get('/ClassSectionAndInstructor', (req, res) => {
-	
-})
-
-
-let leaderboard = [];
-
-app.get('/GetLewisTacToeLeaders', (req, res) => {
-  // Sort leaderboard data by TotalWins (descending)
-  leaderboard.sort((a, b) => b.TotalWins - a.TotalWins);
-
-  // Return only top 3 players
-  const topPlayers = leaderboard.slice(0, 3);
-  res.json(topPlayers);
+const instructorSchema = new mongoose.Schema({
+  name: String,
+  officeHours: String,
+  appointmentRequests: String,
+  lewisEmail: String,
+  lewisPhone: String,
+  office: String,
+  instructorID: Number
 });
 
-// POST endpoint to add win or tie for authenticated user
-app.post('/AddWinOrTie', (req, res) => {
-  res.header('Access-Control-Allow-Credentials', 'true');
-  const { name } = req.oidc.user;
+const classSchema = new mongoose.Schema({
+  className: String,
+  classID: String,
+  classNumber: Number,
+  creditHours: Number,
+  classDescription: String,
+  prerequisites: String,
+  learningOutcomes: String,
+  modules: String,
+  instructorID: Number,
+  courseID: Number
+})
 
-  const index = leaderboard.findIndex(player => player.UserName === name);
-  if (index !== -1) {
-    // Increment the wins or ties for the user
-    leaderboard[index].TotalWins += 1;
-  } else {
-    // If the user is not in the leaderboard, add them with 1 win
-    leaderboard.push({ UserName: name, TotalWins: 1 });
+const sectionSchema = new mongoose.Schema({
+  section: String,
+  crn: String,
+  meetingDays: String,
+  meetingTime: String,
+  finalExam: String,
+  meetingLocation: String,
+  courseID: Number,
+  classSectionID: String,
+})
+
+const Instructor = mongoose.model('Instructor', instructorSchema, 'Instructor');
+const Class = mongoose.model('Class', classSchema, 'Class')
+const Section = mongoose.model('ClassSection', sectionSchema, 'ClassSection')
+app.get('/Instructor', async (req, res) => {
+  try {
+    const instructor = await Instructor.findOne();
+    if (!instructor) {
+      console.log('No instructor found');
+      res.status(404).json({ message: 'Instructor not found' });
+      return;
+    }
+    console.log('Retrieved instructor:', instructor);
+    res.json(instructor);
+  } catch (error) {
+    console.error('Error retrieving instructor:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
-
-  res.status(200).send('Win or tie added successfully.');
 });
 
 
-setupMongoDB();
+app.get('/Class', async (req, res) => {
+  try {
+    const classes = await Class.find({});
+    if (!classes) {
+      console.log('No classes found');
+      res.status(404).json({ message: 'Classes not found' });
+      return;
+    }
+    console.log('Retrieved classes:', classes);
+    res.json(classes);
+  } catch (error) {
+    console.error('Error retrieving classes:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/ClassSection', async (req, res) => {
+  try {
+    const classSection = await Section.find({});
+    if (!classSection) {
+      console.log('No class sections found');
+      res.status(404).json({ message: 'Class sections not found' });
+      return;
+    }
+    console.log('Retrieved class sections:', classSection);
+    res.json(classSection);
+  } catch (error) {
+    console.error('Error retrieving class sections:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
+app.get('/ClassSectionAndInstructor', async (req, res) => {
+  try {
+    const classes = await Class.find({});
+
+    const classSections = await Section.find({});
+
+    const instructors = await Instructor.find({});
+
+    const result = classes.map(classItem => {
+      const matchingSection = classSections.find(section => section.courseID === classItem.courseID);
+      const matchingInstructor = instructors.find(instructor => instructor.instructorID === classItem.instructorID);
+      return {
+        className: classItem.className,
+        classID: classItem.classID,
+        creditHours: classItem.creditHours,
+        classDescription: classItem.classDescription,
+        prerequisites: classItem.prerequisites,
+        learningOutcomes: classItem.learningOutcomes,
+        modules: classItem.modules,
+
+        section: matchingSection ? matchingSection.section : null,
+        crn: matchingSection ? matchingSection.crn : null,
+        meetingDays: matchingSection ? matchingSection.meetingDays : null,
+        meetingTimes: matchingSection ? matchingSection.meetingTimes : null,
+        finalExam: matchingSection ? matchingSection.finalExam : null,
+        meetingLocation: matchingSection ? matchingSection.meetingLocation : null,
+        classSectionID: matchingSection ? matchingSection.classSectionID : null,
+
+        instructorName: matchingInstructor ? matchingInstructor.name : null,
+        appointmentRequests: matchingInstructor ? matchingInstructor.appointmentRequests : null,
+        lewisEmail: matchingInstructor ? matchingInstructor.lewisEmail : null,
+        lewisPhone: matchingInstructor ? matchingInstructor.lewisPhone : null,
+        office: matchingInstructor ? matchingInstructor.office : null,
+        officeHours: matchingInstructor ? matchingInstructor.officeHours : null,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching class section and instructor data:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 
 // Custom 404 page.
 app.use((request, response) => {
